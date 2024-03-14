@@ -1,0 +1,10 @@
+name: aiDROP
+version: '${project.version}'
+main: ai.drop.Main
+api-version: '1.20'
+commands:
+  drop:
+  kilof:
+  ci:
+  gm:
+  gamemode:

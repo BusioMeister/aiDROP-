@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="aiDROP:jar">
+    <output-path>$USER_HOME$/Desktop/servcer/plugins</output-path>
+    <root id="archive" name="aiDROP.jar">
+      <element id="module-output" name="aiDROP" />
+    </root>
+  </artifact>
+</component>
