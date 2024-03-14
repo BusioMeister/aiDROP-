@@ -1,0 +1,10 @@
+name: aiDROP
+version: '1.0-SNAPSHOT'
+main: ai.drop.Main
+api-version: '1.20'
+commands:
+  drop:
+  kilof:
+  ci:
+  gm:
+  gamemode:
