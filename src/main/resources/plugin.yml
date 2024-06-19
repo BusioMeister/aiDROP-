@@ -2,6 +2,7 @@ name: aiDROP
 version: '${project.version}'
 main: ai.drop.Main
 api-version: '1.20'
+gamever: 1.20.4
 commands:
   drop:
   kilof:

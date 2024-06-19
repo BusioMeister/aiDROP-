@@ -61,7 +61,7 @@ public class DropListener implements Listener {
             for (Material material : dropChances.keySet()) {
                 Double chance = dropChances.get(material);
                 Random random = new Random();
-                if (canDropMaterial(handItem, material) && chance != null && random.nextDouble() <= chance && dropEnabled.get(playerId).getOrDefault(material, true)) {
+                if (canDropMaterial(handItem, material) && chance != null && random.nextDouble() <= chance.doubleValue() && ((Boolean)((HashMap)dropEnabled.get(playerId)).getOrDefault(material, Boolean.valueOf(true))).booleanValue()) {
                     int minHeight = getMinDropLevel(material);
                     if (blockY < minHeight) {
                         int amount = 1 + (handItem.getEnchantmentLevel(Enchantment.LOOT_BONUS_BLOCKS) > 0 ? random.nextInt(handItem.getEnchantmentLevel(Enchantment.LOOT_BONUS_BLOCKS) + 1) : 0);
