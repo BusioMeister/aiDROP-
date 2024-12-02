@@ -8,28 +8,33 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.text.DecimalFormat;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 
 public class DropListener implements Listener {
 
     public static HashMap<Material, Double> dropChances = new HashMap<>();
     public static HashMap<UUID, HashMap<Material, Boolean>> dropEnabled = new HashMap<>();
     public static HashMap<UUID, Boolean> cobblestoneEnabled = new HashMap<>();
-    public static HashMap<UUID, Inventory> playerInventories = new HashMap<UUID, Inventory>();
+    public static HashMap<UUID, Inventory> playerInventories = new HashMap<>();
 
     static {
         initializeDropChances();
-        initializeDropSettings();
+    }
+
+    public DropListener() {
+        // Initialize settings for players already online at server startup
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            UUID playerId = player.getUniqueId();
+            dropEnabled.putIfAbsent(playerId, new HashMap<>());
+            cobblestoneEnabled.putIfAbsent(playerId, true);
+        }
     }
 
     private static void initializeDropChances() {
@@ -38,45 +43,55 @@ public class DropListener implements Listener {
         dropChances.put(Material.IRON_INGOT, 0.2);
     }
 
-    private static void initializeDropSettings() {
-        // Inicjalizacja ustawień dla każdego gracza
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            dropEnabled.put(player.getUniqueId(), new HashMap<>());
-            cobblestoneEnabled.put(player.getUniqueId(), true);
-        }
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        UUID playerId = player.getUniqueId();
+
+        dropEnabled.putIfAbsent(playerId, new HashMap<>());
+        cobblestoneEnabled.putIfAbsent(playerId, true);
     }
 
     @EventHandler
-    public void onBlockBreak(BlockBreakEvent event) {
+    void onBlockBreak(BlockBreakEvent event) {
         Player player = event.getPlayer();
         UUID playerId = player.getUniqueId();
         Material blockMaterial = event.getBlock().getType();
         int blockY = event.getBlock().getY();
         ItemStack handItem = player.getInventory().getItemInMainHand();
-        if (blockMaterial.equals(Material.STONE)) {
-            event.setCancelled(true);
-            player.giveExp(1);
-            event.getBlock().setType(Material.AIR);
-            boolean cobblestoneDropped = false;
-            for (Material material : dropChances.keySet()) {
-                Double chance = dropChances.get(material);
-                Random random = new Random();
-                if (canDropMaterial(handItem, material) && chance != null && random.nextDouble() <= chance.doubleValue() && ((Boolean)((HashMap)dropEnabled.get(playerId)).getOrDefault(material, Boolean.valueOf(true))).booleanValue()) {
-                    int minHeight = getMinDropLevel(material);
-                    if (blockY < minHeight) {
-                        int amount = 1 + (handItem.getEnchantmentLevel(Enchantment.LOOT_BONUS_BLOCKS) > 0 ? random.nextInt(handItem.getEnchantmentLevel(Enchantment.LOOT_BONUS_BLOCKS) + 1) : 0);
-                        ItemStack itemStack = new ItemStack(material, amount);
-                        addItem(player, itemStack);
-                        player.sendMessage("§7 " + "Wydropiłeś " + amount + " " + material.toString());
-                        return;
-                    }
-                }
-                if (cobblestoneEnabled.get(playerId) && !cobblestoneDropped) {
-                    ItemStack itemStack = new ItemStack(Material.COBBLESTONE, 1);
+
+        if (!blockMaterial.equals(Material.STONE)) return;
+
+        event.setCancelled(true);
+        player.giveExp(1);
+        event.getBlock().setType(Material.AIR);
+
+        boolean cobblestoneDropped = false;
+
+        for (Map.Entry<Material, Double> entry : dropChances.entrySet()) {
+            Material material = entry.getKey();
+            Double chance = entry.getValue();
+
+            if (canDropMaterial(handItem, material) && chance != null
+                    && new Random().nextDouble() <= chance
+                    && dropEnabled.getOrDefault(playerId, new HashMap<>()).getOrDefault(material, true)) {
+
+                int minHeight = getMinDropLevel(material);
+                if (blockY < minHeight) {
+                    int lootBonusLevel = handItem.getEnchantmentLevel(Enchantment.LOOT_BONUS_BLOCKS);
+                    int amount = 1 + (lootBonusLevel > 0 ? new Random().nextInt(lootBonusLevel + 1) : 0);
+
+                    ItemStack itemStack = new ItemStack(material, amount);
                     addItem(player, itemStack);
-                    cobblestoneDropped = true;
+                    player.sendMessage("§7 Wydropiłeś " + amount + " " + material.toString());
+                    return;
                 }
             }
+        }
+
+        if (cobblestoneEnabled.getOrDefault(playerId, true) && !cobblestoneDropped) {
+            addItem(player, new ItemStack(Material.COBBLESTONE));
+            cobblestoneDropped = true;
         }
     }
 
@@ -85,27 +100,40 @@ public class DropListener implements Listener {
         Player player = (Player) event.getWhoClicked();
         UUID playerId = player.getUniqueId();
         Inventory clickedInventory = event.getClickedInventory();
-        if (playerInventories.containsKey(playerId) && clickedInventory != null && clickedInventory.equals(playerInventories.get(playerId))) {
+
+        if (!playerInventories.containsKey(playerId) || clickedInventory == null) return;
+
+        if (clickedInventory.equals(playerInventories.get(playerId))) {
             event.setCancelled(true);
             ItemStack clickedItem = event.getCurrentItem();
-            if (clickedItem != null) {
-                Material material = clickedItem.getType();
-                if (dropChances.containsKey(material)) {
-                    dropEnabled.get(playerId).put(material, !dropEnabled.get(playerId).getOrDefault(material, true));
-                    player.getOpenInventory().setItem(event.getSlot(), createDropItem(playerId, material));
-                    // Aktualizuj nazwę itemu w GUI
-                    ItemMeta itemMeta = clickedItem.getItemMeta();
-                    itemMeta.setDisplayName(material.toString() + " " + (dropEnabled.get(playerId).getOrDefault(material, true) ? "Włączony" : "Wyłączony"));
+
+            if (clickedItem == null) return;
+
+            Material material = clickedItem.getType();
+
+            dropEnabled.putIfAbsent(playerId, new HashMap<>()); // Ensure the map exists
+            Map<Material, Boolean> playerDropSettings = dropEnabled.get(playerId);
+
+            if (dropChances.containsKey(material)) {
+                boolean isEnabled = playerDropSettings.getOrDefault(material, true);
+                playerDropSettings.put(material, !isEnabled);
+
+                player.getOpenInventory().setItem(event.getSlot(), createDropItem(playerId, material));
+
+                ItemMeta itemMeta = clickedItem.getItemMeta();
+                if (itemMeta != null) {
+                    itemMeta.setDisplayName(material + " " + (!isEnabled ? "Włączony" : "Wyłączony"));
                     clickedItem.setItemMeta(itemMeta);
-                } else if (material.equals(Material.COBBLESTONE)) {
-                    cobblestoneEnabled.put(playerId, !cobblestoneEnabled.getOrDefault(playerId, true));
-                    new DropGUI(player).updateGUI(); // Odśwież GUI po kliknięciu w Cobblestone
                 }
+            } else if (material.equals(Material.COBBLESTONE)) {
+                boolean isEnabled = cobblestoneEnabled.getOrDefault(playerId, true);
+                cobblestoneEnabled.put(playerId, !isEnabled);
+
+                new DropGUI(player).updateGUI();
             }
         }
     }
 
-    // Metoda do tworzenia itemów do GUI
     public static ItemStack createDropItem(UUID playerId, Material material) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
@@ -126,7 +154,6 @@ public class DropListener implements Listener {
         return item;
     }
 
-    // Metoda sprawdzająca, czy gracz może dostać dany materiał
     private boolean canDropMaterial(ItemStack handItem, Material material) {
         Material toolMaterial = handItem.getType();
         switch (toolMaterial) {
@@ -142,12 +169,10 @@ public class DropListener implements Listener {
         }
     }
 
-    // Metoda zwracająca minimalny poziom dla danego materiału
     private static int getMinDropLevel(Material material) {
         return (material.equals(Material.DIAMOND)) ? 50 : 80;
     }
 
-    // Metoda dodająca przedmiot do ekwipunku gracza
     private void addItem(Player p, ItemStack iS) {
         Inventory inv = p.getInventory();
 
@@ -172,7 +197,6 @@ public class DropListener implements Listener {
         p.getWorld().dropItem(p.getLocation(), iS);
     }
 
-    // Metoda do zapisu stanu dla danego materiału w pliku konfiguracyjnym
     private void saveDropEnabled(UUID playerId, Material material, boolean enabled) {
         FileConfiguration config = Main.getPlugin().getConfig();
         config.set("dropEnabled." + playerId.toString() + "." + material.toString(), enabled);
